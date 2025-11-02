@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Mint — Base Sepolia</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+  <style>
+    :root{
+      --bg:#001326; --bg2:#00294d;
+      --accent:#3b82f6; --accent2:#2563eb;
+      --text:#eaf4ff; --muted:#94b9ff;
+      --panel:rgba(255,255,255,.07); --border:rgba(255,255,255,.15);
+      --ok:#22c55e; --danger:#ff4d6d; --glow:0 0 22px rgba(59,130,246,.7);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;color:var(--text);
+      font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+      min-height:100vh;
+      background:
+        url("Public/Baez.png") no-repeat left center / 540px,
+        radial-gradient(900px 700px at 120% 30%, var(--bg2), transparent),
+        linear-gradient(180deg, var(--bg), #000814 60%);
+      display:flex; align-items:center; justify-content:center; padding:24px;
+    }
+    .card{
+      width:460px; background:var(--panel); border:1px solid var(--border);
+      border-radius:16px; padding:18px; backdrop-filter:blur(10px);
+      box-shadow: var(--glow);
+    }
+    h1{margin:0 0 8px; font-size:20px; color:#fff}
+    .sub{font-size:12px;color:var(--muted); margin-bottom:8px}
+    .row{display:flex; gap:10px; align-items:center}
+    input,button{
+      appearance:none; border:1px solid var(--border); background:var(--panel); color:var(--text);
+      padding:10px 12px; border-radius:12px; font-size:14px;
+    }
+    input{flex:1}
+    button{cursor:pointer; font-weight:600; transition:.2s ease}
+    button:hover{border-color:var(--accent); box-shadow:var(--glow)}
+    .primary{background:linear-gradient(135deg,var(--accent),var(--accent2)); border:none; color:#fff}
+    .danger{background:linear-gradient(135deg,#ff6b8b,#ff3671); border:none; color:#fff}
+    .mini{padding:8px 10px}
+    .hint{font-size:12px; color:var(--muted); margin-top:8px}
+    .log{
+      margin-top:12px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background:rgba(0,0,0,.35); border:1px solid var(--border); border-radius:12px; padding:12px;
+      height:140px; overflow:auto; white-space:pre-wrap;
+    }
+
+    /* modal clair */
+    .overlay{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.35); z-index:9999;}
+    .modal{
+      width:640px; max-width:95vw; border-radius:16px; overflow:hidden;
+      background:#f3f7ff; color:#0f172a; box-shadow:0 24px 60px rgba(0,0,0,.35);
+      border:1px solid rgba(0,0,0,.06);
+    }
+    .modal-header{text-align:center; padding:22px 24px 10px}
+    .modal-title{font-weight:800; font-size:22px; color:#0f172a; margin:0 0 4px}
+    .modal-sub{font-size:14px; color:#64748b; margin:0}
+    .wallets{display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:18px 22px 8px}
+    @media(max-width:560px){.wallets{grid-template-columns:1fr}}
+    .wallet{
+      background:#fff; border:1px solid rgba(0,0,0,.06); border-radius:14px;
+      padding:16px; display:flex; align-items:center; gap:12px; cursor:pointer;
+      box-shadow:0 6px 14px rgba(15,23,42,.08);
+      transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+    }
+    .wallet:hover{transform:translateY(-1px); border-color:#93c5fd; box-shadow:0 10px 24px rgba(59,130,246,.25);}
+    .wallet.disabled{opacity:.5; cursor:not-allowed}
+    .wallet svg{width:28px; height:28px; flex-shrink:0}
+    .wallet-name{font-weight:700; color:#0f172a}
+    .modal-footer{display:flex; justify-content:flex-end; padding:16px 22px 20px; gap:10px}
+    .btn-ghost{background:#fff; border:1px solid rgba(0,0,0,.06); color:#0f172a; padding:10px 14px; border-radius:12px; cursor:pointer;}
+    .btn-ghost:hover{border-color:#94a3b8}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Mint NFT — Base Sepolia</h1>
+    <div class="sub">Choisis ton wallet, colle l’adresse du contrat, puis <b>Mint</b>.</div>
+
+    <div class="row" style="margin-top:8px">
+      <input id="contract" placeholder="Adresse du contrat 0x..." value="0xE3BB850235a303d02e36E40A36431C51a0aBEfC3" />
+      <input id="qty" type="number" min="1" value="1" style="width:96px" />
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <button id="btnConnect" class="primary">🔗 Connecter un wallet</button>
+      <button id="btnDisconnect" class="danger" style="display:none">Déconnecter</button>
+      <button id="btnMint" class="mini" style="margin-left:auto">💎 Mint</button>
+    </div>
+
+    <div class="hint">Base Sepolia sera sélectionné automatiquement.</div>
+    <div class="log" id="log">Prêt.</div>
+  </div>
+
+  <div id="overlay" class="overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Select a Wallet to Connect</div>
+        <p class="modal-sub">Select from the wallets you have installed</p>
+      </div>
+      <div id="walletGrid" class="wallets"></div>
+      <div class="modal-footer"><button id="closeModal" class="btn-ghost">Close</button></div>
+    </div>
+  </div>
+
+<script>
+/* === ton JS inchangé (connexion/mint) === */
+const CHAIN_ID_HEX="0x14A34";let provider=null,ethersProvider=null,signer=null;
+const ICONS = {
+  'Rabby': `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#0052FF"/><path d="M10 18c2.5-3.5 7.5-3.5 10 0-2 2.2-8 2.2-10 0z" fill="#fff"/><circle cx="20" cy="13" r="1.8" fill="#fff"/></svg>`,
+  'MetaMask': `<svg viewBox="0 0 32 32"><path fill="#E2761B" d="M4 4l9 7-2 4-7-5zM28 4l-9 7 2 4 7-5z"/><path fill="#F5841F" d="M10 20l6 4 6-4-2 6-4 2-4-2z"/></svg>`,
+  'Coinbase Wallet': `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#0052FF"/><rect x="12" y="12" width="8" height="8" rx="2" fill="#fff"/></svg>`,
+  'Phantom': `<svg viewBox="0 0 32 32"><rect x="5" y="5" width="22" height="22" rx="6" fill="#7c3aed"/><circle cx="13" cy="15" r="2" fill="#fff"/><circle cx="19" cy="15" r="2" fill="#fff"/></svg>`,
+  'Wallet': `<svg viewBox="0 0 32 32"><rect x="4" y="9" width="24" height="14" rx="4" fill="#e2e8f0"/><circle cx="22" cy="16" r="2" fill="#0f172a"/></svg>`
+};
+const RDNS_MAP={"io.metamask":"MetaMask","com.coinbase.wallet":"Coinbase Wallet","com.debank.rabby":"Rabby","app.phantom":"Phantom"};
+function normalizeLabel(name,rdns,p){if(rdns&&RDNS_MAP[rdns])return RDNS_MAP[rdns];if(p&&(p.isPhantom||p._isPhantom||(window.phantom&&window.phantom.ethereum===p)))return"Phantom";if(p&&p.isRabby)return"Rabby";if(p&&p.isCoinbaseWallet)return"Coinbase Wallet";if(p&&p.isMetaMask)return"MetaMask";if(/phantom/i.test(name))return"Phantom";if(/rabby/i.test(name))return"Rabby";if(/coinbase/i.test(name))return"Coinbase Wallet";if(/metamask/i.test(name))return"MetaMask";return"Wallet";}
+const discovered=[];window.addEventListener('eip6963:announceProvider',e=>{const{info,provider}=e.detail;discovered.push({label:normalizeLabel(info?.name||"Wallet",info?.rdns||"",provider),provider,rdns:info?.rdns||""});});window.dispatchEvent(new Event('eip6963:requestProvider'));
+function legacyInjectedProviders(){const l=[];const eth=window.ethereum;if(eth){if(Array.isArray(eth.providers))l.push(...eth.providers);else l.push(eth);}if(window.phantom&&window.phantom.ethereum)l.push(window.phantom.ethereum);return l;}
+const $=s=>document.querySelector(s);function log(m){const e=$('#log');e.textContent=(m+'\n'+e.textContent).slice(0,4000);}function showModal(){$('#overlay').style.display='flex';}function hideModal(){$('#overlay').style.display='none';}
+function renderWalletChoices(){const g=$('#walletGrid');g.innerHTML='';const u=new Map();for(const d of discovered){const k=d.rdns||String(d.provider);if(!u.has(k))u.set(k,{label:d.label,provider:d.provider});}if(u.size===0){for(const p of legacyInjectedProviders()){const label=normalizeLabel(p?.name||"Wallet","",p);const key=String(p);if(!u.has(key))u.set(key,{label,provider:p});}}for(const[k,v]of u.entries()){const p=v.provider;if(p&&(p.isPhantom||p._isPhantom||(window.phantom&&window.phantom.ethereum===p)))u.set(k,{label:"Phantom",provider:p});}
+const ORDER={"Rabby":0,"MetaMask":1,"Phantom":2,"Coinbase Wallet":3,"Wallet":9};const arr=[...u.values()].sort((a,b)=>(ORDER[a.label]??9)-(ORDER[b.label]??9));if(arr.length===0)g.appendChild(walletCard("Wallet",null,true));else arr.forEach(it=>g.appendChild(walletCard(it.label,it.provider)));}
+function walletCard(label,pObj,disabled){const d=document.createElement('div');d.className='wallet'+((disabled||!pObj)?' disabled':'');d.innerHTML=(ICONS[label]||ICONS['Wallet'])+`<div class="wallet-name">${label}</div>`;if(pObj)d.onclick=async()=>{await connectUsing(pObj,label);hideModal();};return d;}
+async function connectUsing(pObj,label){try{provider=pObj;ethersProvider=new ethers.BrowserProvider(provider);await provider.request({method:'eth_requestAccounts'});signer=await ethersProvider.getSigner();const addr=await signer.getAddress();$('#btnDisconnect').style.display='inline-block';log(`✅ ${label} connecté: ${addr}`);}catch(e){log('❌ Connexion: '+(e.message||e));}}
+function disconnectLocal(){signer=null;provider=null;ethersProvider=null;$('#btnDisconnect').style.display='none';log('🔌 Déconnecté.');}
+async function ensureBaseSepolia(){if(!provider)throw new Error('Pas de wallet connecté');const id=await provider.request({method:'eth_chainId'});if(id.toLowerCase()!==CHAIN_ID_HEX.toLowerCase()){try{await provider.request({method:'wallet_switchEthereumChain',params:[{chainId:CHAIN_ID_HEX}]});}catch(e){await provider.request({method:'wallet_addEthereumChain',params:[{chainId:CHAIN_ID_HEX,chainName:'Base Sepolia',rpcUrls:['https://sepolia.base.org'],blockExplorerUrls:['https://sepolia.basescan.org'],nativeCurrency:{name:'Ether',symbol:'ETH',decimals:18}}]});}}}
+async function doMint(){try{if(!signer)throw new Error('Wallet non connecté');await ensureBaseSepolia();const addr=$('#contract').value.trim();const qty=parseInt($('#qty').value||'1',10);if(!/^0x[a-fA-F0-9]{40}$/.test(addr))throw new Error('Adresse contrat invalide');if(!qty||qty<1)throw new Error('Quantité invalide');const abi=['function mint(uint256)','function totalMinted() view returns (uint256)'];const c=new ethers.Contract(addr,abi,signer);const tx=await c.mint(qty);log('⏳ Tx envoyée: '+tx.hash);const rc=await tx.wait();const tot=await c.totalMinted();log('✅ Mint confirmé (bloc '+rc.blockNumber+') — totalMinted='+tot.toString());}catch(e){log('❌ '+(e.message||e));}}
+$('#btnConnect').onclick=()=>{renderWalletChoices();showModal();};$('#closeModal').onclick=hideModal;$('#overlay').onclick=e=>{if(e.target.id==='overlay')hideModal();};document.addEventListener('keydown',e=>{if(e.key==='Escape')hideModal();});$('#btnDisconnect').onclick=disconnectLocal;$('#btnMint').onclick=doMint;window.addEventListener('load',()=>log('Prêt. Clique « Connecter un wallet ».'));
+</script>
+</body>
+</html>
