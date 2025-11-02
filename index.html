@@ -107,9 +107,42 @@
     </div>
   </div>
 
+  <!-- Popup simple -->
+  <div id="pop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:#111827; color:#e5e7eb; border:1px solid #334155; padding:16px; border-radius:12px; width:min(92vw,420px);">
+      <div id="popTitle" style="font-weight:800; margin-bottom:6px;">Impossible de minter</div>
+      <div id="popMsg" style="font-size:14px; color:#cbd5e1; white-space:pre-wrap"></div>
+      <div style="text-align:right; margin-top:12px;">
+        <button id="popClose" style="padding:8px 12px; border-radius:10px; border:1px solid #475569; background:#0b1220; color:#e5e7eb; cursor:pointer">OK</button>
+      </div>
+    </div>
+  </div>
+
 <script>
-/* === ton JS inchangé (connexion/mint) === */
-const CHAIN_ID_HEX="0x14A34";let provider=null,ethersProvider=null,signer=null;
+/* =========================
+   Réseau / état / helpers
+   ========================= */
+const CHAIN_ID_HEX = "0x14A34"; // Base Sepolia
+
+let provider = null;
+let ethersProvider = null;
+let signer = null;
+
+const $ = s => document.querySelector(s);
+function log(msg){
+  const el = $('#log');
+  el.textContent = (msg + '\n' + el.textContent).slice(0, 4000);
+}
+function popup(title, msg){
+  $('#popTitle').textContent = title;
+  $('#popMsg').textContent = msg;
+  $('#pop').style.display = 'flex';
+}
+document.getElementById('popClose').onclick = () => { document.getElementById('pop').style.display = 'none'; };
+
+/* =========================
+   Wallet discovery (EIP-6963)
+   ========================= */
 const ICONS = {
   'Rabby': `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#0052FF"/><path d="M10 18c2.5-3.5 7.5-3.5 10 0-2 2.2-8 2.2-10 0z" fill="#fff"/><circle cx="20" cy="13" r="1.8" fill="#fff"/></svg>`,
   'MetaMask': `<svg viewBox="0 0 32 32"><path fill="#E2761B" d="M4 4l9 7-2 4-7-5zM28 4l-9 7 2 4 7-5z"/><path fill="#F5841F" d="M10 20l6 4 6-4-2 6-4 2-4-2z"/></svg>`,
@@ -117,19 +150,220 @@ const ICONS = {
   'Phantom': `<svg viewBox="0 0 32 32"><rect x="5" y="5" width="22" height="22" rx="6" fill="#7c3aed"/><circle cx="13" cy="15" r="2" fill="#fff"/><circle cx="19" cy="15" r="2" fill="#fff"/></svg>`,
   'Wallet': `<svg viewBox="0 0 32 32"><rect x="4" y="9" width="24" height="14" rx="4" fill="#e2e8f0"/><circle cx="22" cy="16" r="2" fill="#0f172a"/></svg>`
 };
-const RDNS_MAP={"io.metamask":"MetaMask","com.coinbase.wallet":"Coinbase Wallet","com.debank.rabby":"Rabby","app.phantom":"Phantom"};
-function normalizeLabel(name,rdns,p){if(rdns&&RDNS_MAP[rdns])return RDNS_MAP[rdns];if(p&&(p.isPhantom||p._isPhantom||(window.phantom&&window.phantom.ethereum===p)))return"Phantom";if(p&&p.isRabby)return"Rabby";if(p&&p.isCoinbaseWallet)return"Coinbase Wallet";if(p&&p.isMetaMask)return"MetaMask";if(/phantom/i.test(name))return"Phantom";if(/rabby/i.test(name))return"Rabby";if(/coinbase/i.test(name))return"Coinbase Wallet";if(/metamask/i.test(name))return"MetaMask";return"Wallet";}
-const discovered=[];window.addEventListener('eip6963:announceProvider',e=>{const{info,provider}=e.detail;discovered.push({label:normalizeLabel(info?.name||"Wallet",info?.rdns||"",provider),provider,rdns:info?.rdns||""});});window.dispatchEvent(new Event('eip6963:requestProvider'));
-function legacyInjectedProviders(){const l=[];const eth=window.ethereum;if(eth){if(Array.isArray(eth.providers))l.push(...eth.providers);else l.push(eth);}if(window.phantom&&window.phantom.ethereum)l.push(window.phantom.ethereum);return l;}
-const $=s=>document.querySelector(s);function log(m){const e=$('#log');e.textContent=(m+'\n'+e.textContent).slice(0,4000);}function showModal(){$('#overlay').style.display='flex';}function hideModal(){$('#overlay').style.display='none';}
-function renderWalletChoices(){const g=$('#walletGrid');g.innerHTML='';const u=new Map();for(const d of discovered){const k=d.rdns||String(d.provider);if(!u.has(k))u.set(k,{label:d.label,provider:d.provider});}if(u.size===0){for(const p of legacyInjectedProviders()){const label=normalizeLabel(p?.name||"Wallet","",p);const key=String(p);if(!u.has(key))u.set(key,{label,provider:p});}}for(const[k,v]of u.entries()){const p=v.provider;if(p&&(p.isPhantom||p._isPhantom||(window.phantom&&window.phantom.ethereum===p)))u.set(k,{label:"Phantom",provider:p});}
-const ORDER={"Rabby":0,"MetaMask":1,"Phantom":2,"Coinbase Wallet":3,"Wallet":9};const arr=[...u.values()].sort((a,b)=>(ORDER[a.label]??9)-(ORDER[b.label]??9));if(arr.length===0)g.appendChild(walletCard("Wallet",null,true));else arr.forEach(it=>g.appendChild(walletCard(it.label,it.provider)));}
-function walletCard(label,pObj,disabled){const d=document.createElement('div');d.className='wallet'+((disabled||!pObj)?' disabled':'');d.innerHTML=(ICONS[label]||ICONS['Wallet'])+`<div class="wallet-name">${label}</div>`;if(pObj)d.onclick=async()=>{await connectUsing(pObj,label);hideModal();};return d;}
-async function connectUsing(pObj,label){try{provider=pObj;ethersProvider=new ethers.BrowserProvider(provider);await provider.request({method:'eth_requestAccounts'});signer=await ethersProvider.getSigner();const addr=await signer.getAddress();$('#btnDisconnect').style.display='inline-block';log(`✅ ${label} connecté: ${addr}`);}catch(e){log('❌ Connexion: '+(e.message||e));}}
-function disconnectLocal(){signer=null;provider=null;ethersProvider=null;$('#btnDisconnect').style.display='none';log('🔌 Déconnecté.');}
-async function ensureBaseSepolia(){if(!provider)throw new Error('Pas de wallet connecté');const id=await provider.request({method:'eth_chainId'});if(id.toLowerCase()!==CHAIN_ID_HEX.toLowerCase()){try{await provider.request({method:'wallet_switchEthereumChain',params:[{chainId:CHAIN_ID_HEX}]});}catch(e){await provider.request({method:'wallet_addEthereumChain',params:[{chainId:CHAIN_ID_HEX,chainName:'Base Sepolia',rpcUrls:['https://sepolia.base.org'],blockExplorerUrls:['https://sepolia.basescan.org'],nativeCurrency:{name:'Ether',symbol:'ETH',decimals:18}}]});}}}
-async function doMint(){try{if(!signer)throw new Error('Wallet non connecté');await ensureBaseSepolia();const addr=$('#contract').value.trim();const qty=parseInt($('#qty').value||'1',10);if(!/^0x[a-fA-F0-9]{40}$/.test(addr))throw new Error('Adresse contrat invalide');if(!qty||qty<1)throw new Error('Quantité invalide');const abi=['function mint(uint256)','function totalMinted() view returns (uint256)'];const c=new ethers.Contract(addr,abi,signer);const tx=await c.mint(qty);log('⏳ Tx envoyée: '+tx.hash);const rc=await tx.wait();const tot=await c.totalMinted();log('✅ Mint confirmé (bloc '+rc.blockNumber+') — totalMinted='+tot.toString());}catch(e){log('❌ '+(e.message||e));}}
-$('#btnConnect').onclick=()=>{renderWalletChoices();showModal();};$('#closeModal').onclick=hideModal;$('#overlay').onclick=e=>{if(e.target.id==='overlay')hideModal();};document.addEventListener('keydown',e=>{if(e.key==='Escape')hideModal();});$('#btnDisconnect').onclick=disconnectLocal;$('#btnMint').onclick=doMint;window.addEventListener('load',()=>log('Prêt. Clique « Connecter un wallet ».'));
+const RDNS_MAP = {
+  "io.metamask": "MetaMask",
+  "com.coinbase.wallet": "Coinbase Wallet",
+  "com.debank.rabby": "Rabby",
+  "app.phantom": "Phantom"
+};
+function normalizeLabel(name, rdns, p){
+  if (rdns && RDNS_MAP[rdns]) return RDNS_MAP[rdns];
+  if (p && (p.isPhantom || p._isPhantom || (window.phantom && window.phantom.ethereum === p))) return "Phantom";
+  if (p && p.isRabby) return "Rabby";
+  if (p && p.isCoinbaseWallet) return "Coinbase Wallet";
+  if (p && p.isMetaMask) return "MetaMask";
+  if (/phantom/i.test(name)) return "Phantom";
+  if (/rabby/i.test(name)) return "Rabby";
+  if (/coinbase/i.test(name)) return "Coinbase Wallet";
+  if (/metamask/i.test(name)) return "MetaMask";
+  return "Wallet";
+}
+
+const discovered = [];
+window.addEventListener('eip6963:announceProvider', e => {
+  const { info, provider } = e.detail;
+  discovered.push({ label: normalizeLabel(info?.name || "Wallet", info?.rdns || "", provider), provider, rdns: info?.rdns || "" });
+});
+window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+function legacyInjectedProviders(){
+  const list = [];
+  const eth = window.ethereum;
+  if (eth){
+    if (Array.isArray(eth.providers)) list.push(...eth.providers);
+    else list.push(eth);
+  }
+  if (window.phantom && window.phantom.ethereum) list.push(window.phantom.ethereum);
+  return list;
+}
+
+function renderWalletChoices(){
+  const grid = document.getElementById('walletGrid');
+  grid.innerHTML = '';
+
+  const unique = new Map();
+  for (const d of discovered){
+    const key = d.rdns || String(d.provider);
+    if (!unique.has(key)) unique.set(key, { label: d.label, provider: d.provider });
+  }
+  if (unique.size === 0){
+    for (const p of legacyInjectedProviders()){
+      const label = normalizeLabel(p?.name || "Wallet", "", p);
+      const key = String(p);
+      if (!unique.has(key)) unique.set(key, { label, provider: p });
+    }
+  }
+  for (const [k, v] of unique.entries()){
+    const p = v.provider;
+    if (p && (p.isPhantom || p._isPhantom || (window.phantom && window.phantom.ethereum === p))){
+      unique.set(k, { label: "Phantom", provider: p });
+    }
+  }
+
+  const ORDER = {"Rabby":0,"MetaMask":1,"Phantom":2,"Coinbase Wallet":3,"Wallet":9};
+  const arr = [...unique.values()].sort((a,b)=>(ORDER[a.label]??9)-(ORDER[b.label]??9));
+
+  if (arr.length === 0){
+    grid.appendChild(walletCard("Wallet", null, true));
+  } else {
+    arr.forEach(it => grid.appendChild(walletCard(it.label, it.provider)));
+  }
+}
+
+function walletCard(label, pObj, disabled){
+  const d = document.createElement('div');
+  d.className = 'wallet' + ((disabled || !pObj) ? ' disabled' : '');
+  d.innerHTML = (ICONS[label] || ICONS['Wallet']) + `<div class="wallet-name">${label}</div>`;
+  if (pObj){
+    d.onclick = async () => { await connectUsing(pObj, label); hideModal(); };
+  }
+  return d;
+}
+
+/* =========================
+   Connexion / réseau
+   ========================= */
+function showModal(){ document.getElementById('overlay').style.display = 'flex'; }
+function hideModal(){ document.getElementById('overlay').style.display = 'none'; }
+
+async function connectUsing(pObj, label){
+  try{
+    provider = pObj;
+    ethersProvider = new ethers.BrowserProvider(provider);
+    await provider.request({ method: 'eth_requestAccounts' });
+    signer = await ethersProvider.getSigner();
+    document.getElementById('btnDisconnect').style.display = 'inline-block';
+    log(`✅ ${label} connecté: ${await signer.getAddress()}`);
+  }catch(e){
+    log('❌ Connexion: ' + (e.message || e));
+  }
+}
+
+function disconnectLocal(){
+  signer = null;
+  provider = null;
+  ethersProvider = null;
+  document.getElementById('btnDisconnect').style.display = 'none';
+  log('🔌 Déconnecté.');
+}
+
+async function ensureBaseSepolia(){
+  if(!provider) throw new Error('Pas de wallet connecté');
+  const id = await provider.request({ method: 'eth_chainId' });
+  if(id.toLowerCase() !== CHAIN_ID_HEX.toLowerCase()){
+    try{
+      await provider.request({ method:'wallet_switchEthereumChain', params:[{ chainId: CHAIN_ID_HEX }] });
+    }catch(e){
+      await provider.request({ method:'wallet_addEthereumChain', params:[{
+        chainId: CHAIN_ID_HEX, chainName:'Base Sepolia',
+        rpcUrls:['https://sepolia.base.org'], blockExplorerUrls:['https://sepolia.basescan.org'],
+        nativeCurrency:{ name:'Ether', symbol:'ETH', decimals:18 }
+      }]});
+    }
+  }
+}
+
+/* =========================
+   ABI NFT + helpers état
+   ========================= */
+const NFT_ABI = [
+  'function mint(uint256)',
+  'function totalMinted() view returns (uint256)',
+  'function maxSupply() view returns (uint256)',
+  'function saleActive() view returns (bool)'
+];
+
+async function readState(addr){
+  const c = new ethers.Contract(addr, NFT_ABI, signer || ethersProvider);
+  const [sale, minted, cap] = await Promise.all([
+    c.saleActive(),
+    c.totalMinted(),
+    c.maxSupply()
+  ]);
+  return { sale, minted: Number(minted), cap: Number(cap), remaining: Number(cap) - Number(minted) };
+}
+
+async function refreshRemaining(){
+  try{
+    if(!ethersProvider) return;
+    const addr = document.getElementById('contract').value.trim();
+    if(!/^0x[a-fA-F0-9]{40}$/.test(addr)) return;
+    const { remaining } = await readState(addr);
+    const qtyInput = document.getElementById('qty');
+    qtyInput.max = Math.max(1, remaining);
+  }catch{
+    /* silencieux */
+  }
+}
+
+/* =========================
+   Mint avec pré-vérifications
+   ========================= */
+async function doMint(){
+  try{
+    if(!signer) throw new Error('Wallet non connecté');
+    await ensureBaseSepolia();
+
+    const addr = document.getElementById('contract').value.trim();
+    const qty = parseInt(document.getElementById('qty').value || '1', 10);
+
+    if(!/^0x[a-fA-F0-9]{40}$/.test(addr)) throw new Error('Adresse contrat invalide');
+    if(!qty || qty < 1) throw new Error('Quantité invalide');
+
+    // lecture on-chain et blocage UI si besoin
+    const { sale, remaining } = await readState(addr);
+
+    // maj de la contrainte côté UI
+    const qtyInput = document.getElementById('qty');
+    qtyInput.max = Math.max(1, remaining);
+
+    if(!sale){
+      popup('Vente fermée', 'La vente est désactivée (saleActive=false).');
+      return;
+    }
+    if(qty > remaining){
+      popup('Quantité trop élevée', `Il reste ${remaining} NFT${remaining>1?'s':''} maximum à minter.\nRéduis la quantité.`);
+      return;
+    }
+
+    const c = new ethers.Contract(addr, NFT_ABI, signer);
+    const tx = await c.mint(qty);
+    log('⏳ Tx envoyée: ' + tx.hash);
+    const rc = await tx.wait();
+    log('✅ Mint confirmé (bloc ' + rc.blockNumber + ')');
+
+    // refresh après mint
+    await refreshRemaining();
+
+  }catch(e){
+    log('❌ ' + (e.message || e));
+  }
+}
+
+/* =========================
+   Events UI
+   ========================= */
+document.getElementById('btnConnect').onclick = () => { renderWalletChoices(); showModal(); };
+document.getElementById('closeModal').onclick = hideModal;
+document.getElementById('overlay').onclick = e => { if(e.target.id === 'overlay') hideModal(); };
+document.addEventListener('keydown', e => { if(e.key === 'Escape') hideModal(); });
+
+document.getElementById('btnDisconnect').onclick = disconnectLocal;
+document.getElementById('btnMint').onclick = doMint;
+
+document.getElementById('contract').addEventListener('change', refreshRemaining);
+window.addEventListener('load', refreshRemaining);
+window.addEventListener('load', () => log('Prêt. Clique « Connecter un wallet ».'));
 </script>
 </body>
 </html>
