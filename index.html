@@ -286,8 +286,10 @@ const NFT_ABI = [
   'function saleActive() view returns (bool)'
 ];
 
-async function readState(addr){
-  const c = new ethers.Contract(addr, NFT_ABI, signer || ethersProvider);
+async function readState(addr, providerOverride = null){
+  const providerToUse = providerOverride || signer || ethersProvider;
+  if(!providerToUse) throw new Error('Aucun provider disponible');
+  const c = new ethers.Contract(addr, NFT_ABI, providerToUse);
   const [sale, minted, cap] = await Promise.all([
     c.saleActive(),
     c.totalMinted(),
@@ -299,21 +301,26 @@ async function readState(addr){
 async function refreshRemaining(){
   try{
     const remainingEl = document.getElementById('remainingInfo');
-    if(!ethersProvider){
-      remainingEl.textContent = '';
-      return;
-    }
     const addr = document.getElementById('contract').value.trim();
     if(!/^0x[a-fA-F0-9]{40}$/.test(addr)){
       remainingEl.textContent = '';
       return;
     }
-    const { remaining, minted, cap } = await readState(addr);
+    
+    // Utiliser le provider connecté ou créer un provider public
+    let providerToUse = ethersProvider;
+    if(!providerToUse){
+      providerToUse = new ethers.JsonRpcProvider('https://sepolia.base.org');
+    }
+    
+    const { remaining, minted, cap } = await readState(addr, providerToUse);
     const qtyInput = document.getElementById('qty');
     qtyInput.max = Math.max(1, remaining);
     remainingEl.textContent = `📊 ${remaining} NFT${remaining>1?'s':''} restant${remaining>1?'s':''} à minter (${minted}/${cap} minés)`;
   }catch(e){
-    document.getElementById('remainingInfo').textContent = '';
+    const remainingEl = document.getElementById('remainingInfo');
+    remainingEl.textContent = '❌ Erreur lors de la récupération des données';
+    console.error('Erreur refreshRemaining:', e);
   }
 }
 
@@ -373,6 +380,11 @@ document.getElementById('btnDisconnect').onclick = disconnectLocal;
 document.getElementById('btnMint').onclick = doMint;
 
 document.getElementById('contract').addEventListener('change', refreshRemaining);
+document.getElementById('contract').addEventListener('input', () => {
+  // Délai pour éviter trop d'appels pendant la saisie
+  clearTimeout(window.refreshTimeout);
+  window.refreshTimeout = setTimeout(refreshRemaining, 500);
+});
 window.addEventListener('load', refreshRemaining);
 window.addEventListener('load', () => log('Prêt. Clique « Connecter un wallet ».'));
 </script>
