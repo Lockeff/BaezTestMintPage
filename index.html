@@ -85,6 +85,7 @@
       <input id="contract" placeholder="Adresse du contrat 0x..." value="0xe4227d738c7dbc9953520f98D7ee49bf8075523a" />
       <input id="qty" type="number" min="1" value="1" style="width:96px" />
     </div>
+    <div id="remainingInfo" class="hint" style="margin-top:6px; color:var(--accent); font-weight:500;"></div>
 
     <div class="row" style="margin-top:10px">
       <button id="btnConnect" class="primary">🔗 Connecter un wallet</button>
@@ -244,6 +245,7 @@ async function connectUsing(pObj, label){
     signer = await ethersProvider.getSigner();
     document.getElementById('btnDisconnect').style.display = 'inline-block';
     log(`✅ ${label} connecté: ${await signer.getAddress()}`);
+    await refreshRemaining();
   }catch(e){
     log('❌ Connexion: ' + (e.message || e));
   }
@@ -254,6 +256,7 @@ function disconnectLocal(){
   provider = null;
   ethersProvider = null;
   document.getElementById('btnDisconnect').style.display = 'none';
+  document.getElementById('remainingInfo').textContent = '';
   log('🔌 Déconnecté.');
 }
 
@@ -295,14 +298,22 @@ async function readState(addr){
 
 async function refreshRemaining(){
   try{
-    if(!ethersProvider) return;
+    const remainingEl = document.getElementById('remainingInfo');
+    if(!ethersProvider){
+      remainingEl.textContent = '';
+      return;
+    }
     const addr = document.getElementById('contract').value.trim();
-    if(!/^0x[a-fA-F0-9]{40}$/.test(addr)) return;
-    const { remaining } = await readState(addr);
+    if(!/^0x[a-fA-F0-9]{40}$/.test(addr)){
+      remainingEl.textContent = '';
+      return;
+    }
+    const { remaining, minted, cap } = await readState(addr);
     const qtyInput = document.getElementById('qty');
     qtyInput.max = Math.max(1, remaining);
-  }catch{
-    /* silencieux */
+    remainingEl.textContent = `📊 ${remaining} NFT${remaining>1?'s':''} restant${remaining>1?'s':''} à minter (${minted}/${cap} minés)`;
+  }catch(e){
+    document.getElementById('remainingInfo').textContent = '';
   }
 }
 
