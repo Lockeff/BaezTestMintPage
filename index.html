@@ -85,6 +85,7 @@
       <input id="contract" placeholder="Adresse du contrat 0x..." value="0xd081bBd1CC8ce3981619cE2E1F70ea677CB433a6" />
       <input id="qty" type="number" min="1" value="1" style="width:96px" />
     </div>
+    <div id="remainingInfo" class="hint" style="margin-top:6px; color:var(--accent); font-weight:500;"></div>
 
     <div class="row" style="margin-top:10px">
       <button id="btnConnect" class="primary">🔗 Connecter un wallet</button>
@@ -244,6 +245,7 @@ async function connectUsing(pObj, label){
     signer = await ethersProvider.getSigner();
     document.getElementById('btnDisconnect').style.display = 'inline-block';
     log(`✅ ${label} connecté: ${await signer.getAddress()}`);
+    await refreshRemaining();
   }catch(e){
     log('❌ Connexion: ' + (e.message || e));
   }
@@ -254,6 +256,7 @@ function disconnectLocal(){
   provider = null;
   ethersProvider = null;
   document.getElementById('btnDisconnect').style.display = 'none';
+  document.getElementById('remainingInfo').textContent = '';
   log('🔌 Déconnecté.');
 }
 
@@ -283,8 +286,10 @@ const NFT_ABI = [
   'function saleActive() view returns (bool)'
 ];
 
-async function readState(addr){
-  const c = new ethers.Contract(addr, NFT_ABI, signer || ethersProvider);
+async function readState(addr, providerOverride = null){
+  const providerToUse = providerOverride || signer || ethersProvider;
+  if(!providerToUse) throw new Error('Aucun provider disponible');
+  const c = new ethers.Contract(addr, NFT_ABI, providerToUse);
   const [sale, minted, cap] = await Promise.all([
     c.saleActive(),
     c.totalMinted(),
@@ -295,14 +300,27 @@ async function readState(addr){
 
 async function refreshRemaining(){
   try{
-    if(!ethersProvider) return;
+    const remainingEl = document.getElementById('remainingInfo');
     const addr = document.getElementById('contract').value.trim();
-    if(!/^0x[a-fA-F0-9]{40}$/.test(addr)) return;
-    const { remaining } = await readState(addr);
+    if(!/^0x[a-fA-F0-9]{40}$/.test(addr)){
+      remainingEl.textContent = '';
+      return;
+    }
+    
+    // Utiliser le provider connecté ou créer un provider public
+    let providerToUse = ethersProvider;
+    if(!providerToUse){
+      providerToUse = new ethers.JsonRpcProvider('https://sepolia.base.org');
+    }
+    
+    const { remaining, minted, cap } = await readState(addr, providerToUse);
     const qtyInput = document.getElementById('qty');
     qtyInput.max = Math.max(1, remaining);
-  }catch{
-    /* silencieux */
+    remainingEl.textContent = `📊 ${remaining} NFT${remaining>1?'s':''} restant${remaining>1?'s':''} à minter (${minted}/${cap} minés)`;
+  }catch(e){
+    const remainingEl = document.getElementById('remainingInfo');
+    remainingEl.textContent = '❌ Erreur lors de la récupération des données';
+    console.error('Erreur refreshRemaining:', e);
   }
 }
 
@@ -362,6 +380,11 @@ document.getElementById('btnDisconnect').onclick = disconnectLocal;
 document.getElementById('btnMint').onclick = doMint;
 
 document.getElementById('contract').addEventListener('change', refreshRemaining);
+document.getElementById('contract').addEventListener('input', () => {
+  // Délai pour éviter trop d'appels pendant la saisie
+  clearTimeout(window.refreshTimeout);
+  window.refreshTimeout = setTimeout(refreshRemaining, 500);
+});
 window.addEventListener('load', refreshRemaining);
 window.addEventListener('load', () => log('Prêt. Clique « Connecter un wallet ».'));
 </script>
